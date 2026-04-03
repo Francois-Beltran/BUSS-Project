@@ -1,13 +1,28 @@
 /**
- * BUSS TRACKER - CLOUD MIGRATION + STABILITY REFACTOR
- * Refactored for Unit-01 Precision & Camera Control
+ * BUSS TRACKER - CLOUD MIGRATION + STABILITY + RANDOM IDENTITY
+ * Refactored for Unique & Persistent Fleet Names
  */
 
-// --- STATIC CONFIG ---
-const BUS_UNIT_ID = 'UNIT-01'; // Static ID to prevent Ghost Markers
-let followMe = true;           // Camera behavior toggle
+// --- 1. RANDOM IDENTITY ENGINE ---
+const ADJECTIVES = ['Swift', 'Bold', 'Silent', 'Steel', 'Iron', 'Lunar', 'Turbo', 'Shadow', 'Azure', 'Crimson'];
+const NOUNS = ['Falcon', 'Wolf', 'Raptor', 'Vanguard', 'Bear', 'Tiger', 'Phantom', 'Eagle', 'Nomad', 'Apex'];
 
-// --- 1. TOAST NOTIFICATIONS ---
+function getPersistentIdentity() {
+    let savedId = localStorage.getItem('BUSS_UNIT_ID');
+    if (!savedId) {
+        const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+        const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+        const num = Math.floor(Math.random() * 99) + 1;
+        savedId = `${adj}-${noun}-${num.toString().padStart(2, '0')}`;
+        localStorage.setItem('BUSS_UNIT_ID', savedId);
+    }
+    return savedId;
+}
+
+const BUS_UNIT_ID = getPersistentIdentity(); // Persistent across refreshes
+let followMe = true;                           // Camera behavior toggle
+
+// --- 2. TOAST NOTIFICATIONS ---
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -18,7 +33,7 @@ function showToast(message, type = 'success') {
     setTimeout(() => { if (container.contains(toast)) container.removeChild(toast); }, 4000);
 }
 
-// --- 2. MAP INITIALIZATION ---
+// --- 3. MAP INITIALIZATION ---
 let wakeLock = null;
 const elWakeStatus = document.getElementById('wake-status');
 
@@ -27,7 +42,7 @@ async function requestWakeLock() {
         try {
             wakeLock = await navigator.wakeLock.request('screen');
             if (elWakeStatus) { elWakeStatus.textContent = "Always On"; elWakeStatus.style.color = "#4CAF50"; }
-        } catch (err) { console.error(err); }
+        } catch (err) {}
     }
 }
 
@@ -47,7 +62,7 @@ const fleetUIElements = {};
 
 const MAX_PATH_POINTS = 50; 
 
-// --- 3. CLOUD CONNECTION ---
+// --- 4. CLOUD CONNECTION ---
 const socket = io('https://buss-project.onrender.com');
 const elStatus = document.getElementById('connection-status');
 const elMyId = document.getElementById('my-id');
@@ -57,7 +72,7 @@ socket.on('connect', () => {
     elStatus.textContent = "Synced to Cloud";
     elStatus.style.color = "#4CAF50";
     elMyId.textContent = BUS_UNIT_ID;
-    showToast("Connected to Fleet Cloud", "success");
+    showToast(`Hello, ${BUS_UNIT_ID}!`, "success");
     requestWakeLock();
     flushOfflineBuffer();
 });
@@ -65,10 +80,9 @@ socket.on('connect', () => {
 socket.on('disconnect', () => {
     elStatus.textContent = "Offline (Buffering)";
     elStatus.style.color = "#FF5722";
-    showToast("Connection Lost - Buffering Enabled", "error");
 });
 
-// --- 4. SNAP-TO-ROAD (OSRM API) ---
+// --- 5. SNAP-TO-ROAD (OSRM API) ---
 async function fetchSnappedLocation(lat, lng) {
     try {
         const response = await fetch(`https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=1`);
@@ -81,7 +95,7 @@ async function fetchSnappedLocation(lat, lng) {
     return { lat, lng };
 }
 
-// --- 5. SMOOTHING & TELEMETRY ---
+// --- 6. SMOOTHING & TELEMETRY ---
 const localSmoothingBuffer = [];
 const DISTANCE_THRESHOLD = 2; 
 const ACCURACY_THRESHOLD = 100; 
@@ -125,7 +139,6 @@ async function handleLocationUpdate(lat, lng, speed, accuracy) {
 
     updateLocalUI(snapped.lat, snapped.lng, speed, smoothed.accuracy);
     
-    // PAYLOAD WITH STATIC BUS NAME
     const payload = { 
         busName: BUS_UNIT_ID, 
         lat: snapped.lat, 
@@ -170,16 +183,14 @@ function flushOfflineBuffer() {
         offlineBuffer.forEach(data => { socket.emit('send-location', data); txCount++; });
         if (elTxCount) elTxCount.textContent = txCount;
         offlineBuffer.length = 0;
-        showToast("Offline data synced!", "success");
     }
 }
 
-// --- 6. CLOUD LISTENERS (Laptop Mode) ---
+// --- 7. CLOUD LISTENERS ---
 socket.on('receive-location', (data) => {
     const { id, busName, lat, lng, speed, accuracy } = data;
-    const unitTag = busName || id; // Prioritize Static ID
+    const unitTag = busName || id;
 
-    // Prevent mirroring: Don't track ourselves as a "peer"
     if (unitTag === BUS_UNIT_ID) return;
 
     rxCount++; if (elRxCount) elRxCount.textContent = rxCount;
@@ -209,8 +220,7 @@ socket.on('receive-location', (data) => {
 });
 
 socket.on('unit-disconnected', (id) => {
-    // In static mode, we don't immediately remove markers based on socket.id
-    // to prevent flickering. markers stay until the app refreshes or a timeout.
+    // In static mode, we don't immediately remove markers and paths to prevent flickering
 });
 
 function createFleetCard(id) {
@@ -218,7 +228,7 @@ function createFleetCard(id) {
     card.className = 'card';
     card.innerHTML = `
         <h2 style="color:#4CAF50; margin-bottom:2px;"><i class="fa-solid fa-car-side"></i> Fleet Unit</h2>
-        <div style="font-size:0.7rem; color:#888; margin-bottom:10px;">ID: ${id}</div>
+        <div style="font-size:0.7rem; color:#888; margin-bottom:10px;">Callsign: ${id}</div>
         <div class="data-row"><span class="data-label">Lat:</span><span class="data-value" id="lat-${id}">--</span></div>
         <div class="data-row"><span class="data-label">Lng:</span><span class="data-value" id="lng-${id}">--</span></div>
         <div class="data-row"><span class="data-label">Dist:</span><span class="data-value" id="dist-${id}">--</span></div>
@@ -232,18 +242,16 @@ function createFleetCard(id) {
     };
 }
 
-// --- 7. UI TOGGLES ---
+// --- 8. UI TOGGLES ---
 const btnFollow = document.getElementById('follow-toggle');
 btnFollow.addEventListener('click', () => {
     followMe = !followMe;
     btnFollow.textContent = followMe ? "ON" : "OFF";
     btnFollow.style.background = followMe ? "#4CAF50" : "#888";
-    if (followMe && lastEmittedPosition) {
-        map.setView([lastEmittedPosition.lat, lastEmittedPosition.lng], 17);
-    }
+    if (followMe && lastEmittedPosition) map.setView([lastEmittedPosition.lat, lastEmittedPosition.lng], 17);
 });
 
-// --- 8. GEOLOCATION WATCHER ---
+// --- 9. GEOLOCATION WATCHER ---
 if ("geolocation" in navigator) {
     navigator.geolocation.watchPosition(
         (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
@@ -255,7 +263,7 @@ if ("geolocation" in navigator) {
 document.getElementById('refresh-btn').addEventListener('click', () => window.location.reload());
 document.getElementById('my-id').addEventListener('click', () => {
     navigator.clipboard.writeText(BUS_UNIT_ID);
-    showToast("Unit ID copied!", "success");
+    showToast("Identity copied!", "success");
 });
 
 document.getElementById('sidebar-header').addEventListener('click', () => {
