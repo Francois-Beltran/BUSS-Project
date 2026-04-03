@@ -1,6 +1,6 @@
 /**
- * BUSS TRACKER - CLOUD MIGRATION + STABILITY + RANDOM IDENTITY
- * Refactored for Unique & Persistent Fleet Names
+ * BUSS TRACKER - CLOUD MIGRATION + STABILITY + TARGETED FOLLOWING
+ * Refactored for Targeted Tracking & Trail Cleanup
  */
 
 // --- 1. RANDOM IDENTITY ENGINE ---
@@ -19,8 +19,8 @@ function getPersistentIdentity() {
     return savedId;
 }
 
-const BUS_UNIT_ID = getPersistentIdentity(); // Persistent across refreshes
-let followMe = true;                           // Camera behavior toggle
+const BUS_UNIT_ID = getPersistentIdentity(); 
+let followTarget = null; // Stores the Callsign we are following (if any)
 
 // --- 2. TOAST NOTIFICATIONS ---
 function showToast(message, type = 'success') {
@@ -54,20 +54,10 @@ const myIcon = L.divIcon({ className: 'custom-marker', iconSize: [16, 16], iconA
 const peerIcon = L.divIcon({ className: 'peer-marker', iconSize: [16, 16], iconAnchor: [8, 8] });
 
 let myMarker = null;
-let myPath = L.polyline([], { 
-    color: '#FF5722', 
-    weight: 4, 
-    opacity: 0.6, 
-    lineCap: 'round', 
-    lineJoin: 'round',
-    smoothFactor: 2.0 // GOOGLE-STYLE Path Smoothing
-}).addTo(map);
+// Trails removed for a cleaner look as requested
 
 const fleetMarkers = {}; 
-const fleetPaths = {}; 
 const fleetUIElements = {}; 
-
-const MAX_PATH_POINTS = 50; 
 
 // --- 4. CLOUD CONNECTION ---
 const socket = io('https://buss-project.onrender.com');
@@ -174,15 +164,11 @@ function updateLocalUI(lat, lng, speed, accuracy) {
     
     if (!myMarker) {
         myMarker = L.marker([lat, lng], { icon: myIcon }).addTo(map);
-        if (followMe) map.setView([lat, lng], 17);
+        if (followTarget === BUS_UNIT_ID) map.setView([lat, lng], 17);
     } else {
         myMarker.setLatLng([lat, lng]);
-        if (followMe) map.panTo([lat, lng]);
+        if (followTarget === BUS_UNIT_ID) map.panTo([lat, lng]);
     }
-
-    myPath.addLatLng([lat, lng]);
-    const pPoints = myPath.getLatLngs();
-    if (pPoints.length > MAX_PATH_POINTS) myPath.setLatLngs(pPoints.slice(1));
 }
 
 function flushOfflineBuffer() {
@@ -218,23 +204,14 @@ socket.on('receive-location', (data) => {
         fleetMarkers[unitTag].setLatLng([lat, lng]);
     }
 
-    if (!fleetPaths[unitTag]) {
-        fleetPaths[unitTag] = L.polyline([], { 
-            color: '#4CAF50', 
-            weight: 4, 
-            opacity: 0.6, 
-            lineCap: 'round', 
-            lineJoin: 'round',
-            smoothFactor: 2.0 // GOOGLE-STYLE Path Smoothing
-        }).addTo(map);
+    // TARGETED PANNING logic
+    if (unitTag === followTarget) {
+        map.panTo([lat, lng]);
     }
-    fleetPaths[unitTag].addLatLng([lat, lng]);
-    const pPoints = fleetPaths[unitTag].getLatLngs();
-    if (pPoints.length > MAX_PATH_POINTS) fleetPaths[unitTag].setLatLngs(pPoints.slice(1));
 });
 
 socket.on('unit-disconnected', (id) => {
-    // In static mode, we don't immediately remove markers and paths to prevent flickering
+    // Graceful disconnect cleanup removed or made silent as requested in previous turn
 });
 
 function createFleetCard(id) {
@@ -256,13 +233,19 @@ function createFleetCard(id) {
     };
 }
 
-// --- 8. UI TOGGLES ---
-const btnFollow = document.getElementById('follow-toggle');
-btnFollow.addEventListener('click', () => {
-    followMe = !followMe;
-    btnFollow.textContent = followMe ? "ON" : "OFF";
-    btnFollow.style.background = followMe ? "#4CAF50" : "#888";
-    if (followMe && lastEmittedPosition) map.setView([lastEmittedPosition.lat, lastEmittedPosition.lng], 17);
+// --- 8. UI HANDLERS ---
+const followInput = document.getElementById('follow-input');
+followInput.addEventListener('input', (e) => {
+    followTarget = e.target.value.trim();
+    if (followTarget) {
+        console.log(`[Follow] Target set to: ${followTarget}`);
+        // Immediately try to pan if the target exists
+        if (followTarget === BUS_UNIT_ID && lastEmittedPosition) {
+             map.panTo([lastEmittedPosition.lat, lastEmittedPosition.lng]);
+        } else if (fleetMarkers[followTarget]) {
+             map.panTo(fleetMarkers[followTarget].getLatLng());
+        }
+    }
 });
 
 // --- 9. GEOLOCATION WATCHER ---
