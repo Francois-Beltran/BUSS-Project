@@ -1,7 +1,11 @@
 /**
- * BUSS TRACKER - CLOUD MIGRATION
- * Refactored for Socket.io + Cloud-First Fleet Tracking
+ * BUSS TRACKER - CLOUD MIGRATION + STABILITY REFACTOR
+ * Refactored for Unit-01 Precision & Camera Control
  */
+
+// --- STATIC CONFIG ---
+const BUS_UNIT_ID = 'UNIT-01'; // Static ID to prevent Ghost Markers
+let followMe = true;           // Camera behavior toggle
 
 // --- 1. TOAST NOTIFICATIONS ---
 function showToast(message, type = 'success') {
@@ -19,7 +23,7 @@ let wakeLock = null;
 const elWakeStatus = document.getElementById('wake-status');
 
 async function requestWakeLock() {
-    if ('wakeLock' in navigator) {
+    if ('wakeLock' in navigator && !wakeLock) {
         try {
             wakeLock = await navigator.wakeLock.request('screen');
             if (elWakeStatus) { elWakeStatus.textContent = "Always On"; elWakeStatus.style.color = "#4CAF50"; }
@@ -35,13 +39,16 @@ const myIcon = L.divIcon({ className: 'custom-marker', iconSize: [16, 16], iconA
 const peerIcon = L.divIcon({ className: 'peer-marker', iconSize: [16, 16], iconAnchor: [8, 8] });
 
 let myMarker = null;
-const fleetMarkers = {}; // Stores markers for other units
-const fleetUIElements = {}; // Stores UI references for other units
+let myPath = L.polyline([], { color: '#FF5722', weight: 4, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }).addTo(map);
 
-// --- 3. CLOUD CONNECTION (Socket.io) ---
-// Initialize connection to the Render server
+const fleetMarkers = {}; 
+const fleetPaths = {}; 
+const fleetUIElements = {}; 
+
+const MAX_PATH_POINTS = 50; 
+
+// --- 3. CLOUD CONNECTION ---
 const socket = io('https://buss-project.onrender.com');
-
 const elStatus = document.getElementById('connection-status');
 const elMyId = document.getElementById('my-id');
 const peersContainer = document.getElementById('peers-container');
@@ -49,11 +56,9 @@ const peersContainer = document.getElementById('peers-container');
 socket.on('connect', () => {
     elStatus.textContent = "Synced to Cloud";
     elStatus.style.color = "#4CAF50";
-    elMyId.textContent = socket.id.substring(0, 8).toUpperCase();
+    elMyId.textContent = BUS_UNIT_ID;
     showToast("Connected to Fleet Cloud", "success");
     requestWakeLock();
-    
-    // BURST SYNC: Send buffered points if any
     flushOfflineBuffer();
 });
 
@@ -63,14 +68,26 @@ socket.on('disconnect', () => {
     showToast("Connection Lost - Buffering Enabled", "error");
 });
 
-// --- 4. SMOOTHING & TELEMETRY LOGIC ---
-const MAX_BUFFER_SIZE = 5;
+// --- 4. SNAP-TO-ROAD (OSRM API) ---
+async function fetchSnappedLocation(lat, lng) {
+    try {
+        const response = await fetch(`https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=1`);
+        const data = await response.json();
+        if (data.code === 'Ok' && data.waypoints?.length > 0) {
+            const [snappedLng, snappedLat] = data.waypoints[0].location;
+            return { lat: snappedLat, lng: snappedLng };
+        }
+    } catch (e) {}
+    return { lat, lng };
+}
+
+// --- 5. SMOOTHING & TELEMETRY ---
 const localSmoothingBuffer = [];
-const DISTANCE_THRESHOLD = 2; // Only emit if moved > 2 meters
-const ACCURACY_THRESHOLD = 100; // Only emit if accuracy < 100 meters
+const DISTANCE_THRESHOLD = 2; 
+const ACCURACY_THRESHOLD = 100; 
 
 let lastEmittedPosition = null;
-const offlineBuffer = []; // Cache points during disconnect
+const offlineBuffer = []; 
 
 let txCount = 0;
 let rxCount = 0;
@@ -93,39 +110,39 @@ function getSmoothedCoords(buffer) {
     return { lat: latSum / buffer.length, lng: lngSum / buffer.length, accuracy: accSum / buffer.length };
 }
 
-function handleLocationUpdate(lat, lng, speed, accuracy) {
-    // 1. Accuracy Filter
+async function handleLocationUpdate(lat, lng, speed, accuracy) {
     if (accuracy > ACCURACY_THRESHOLD) return;
-
-    // 2. Add to smoothing buffer
     localSmoothingBuffer.push({ lat, lng, accuracy });
-    if (localSmoothingBuffer.length > MAX_BUFFER_SIZE) localSmoothingBuffer.shift();
-
+    if (localSmoothingBuffer.length > 5) localSmoothingBuffer.shift();
     const smoothed = getSmoothedCoords(localSmoothingBuffer);
     if (!smoothed) return;
 
-    // 3. Distance Filter (vs last emitted)
+    const snapped = await fetchSnappedLocation(smoothed.lat, smoothed.lng);
     if (lastEmittedPosition) {
-        const dist = calculateHaversine(lastEmittedPosition.lat, lastEmittedPosition.lng, smoothed.lat, smoothed.lng);
+        const dist = calculateHaversine(lastEmittedPosition.lat, lastEmittedPosition.lng, snapped.lat, snapped.lng);
         if (dist < DISTANCE_THRESHOLD) return;
     }
 
-    // 4. Update Local Map & UI
-    updateLocalUI(smoothed.lat, smoothed.lng, speed, smoothed.accuracy);
+    updateLocalUI(snapped.lat, snapped.lng, speed, smoothed.accuracy);
     
-    // 5. Cloud Emitter
-    const payload = { lat: smoothed.lat, lng: smoothed.lng, speed, accuracy: smoothed.accuracy, timestamp: Date.now() };
-    
+    // PAYLOAD WITH STATIC BUS NAME
+    const payload = { 
+        busName: BUS_UNIT_ID, 
+        lat: snapped.lat, 
+        lng: snapped.lng, 
+        speed, 
+        accuracy: smoothed.accuracy, 
+        timestamp: Date.now() 
+    };
+
     if (socket.connected) {
         socket.emit('send-location', payload, (ack) => {
-            txCount++;
-            if (elTxCount) elTxCount.textContent = txCount;
+            txCount++; if (elTxCount) elTxCount.textContent = txCount;
         });
     } else {
         offlineBuffer.push(payload);
     }
-    
-    lastEmittedPosition = smoothed;
+    lastEmittedPosition = snapped;
 }
 
 function updateLocalUI(lat, lng, speed, accuracy) {
@@ -137,37 +154,38 @@ function updateLocalUI(lat, lng, speed, accuracy) {
     
     if (!myMarker) {
         myMarker = L.marker([lat, lng], { icon: myIcon }).addTo(map);
-        map.setView([lat, lng], 17);
+        if (followMe) map.setView([lat, lng], 17);
     } else {
         myMarker.setLatLng([lat, lng]);
+        if (followMe) map.panTo([lat, lng]);
     }
-    updateMapBounds();
+
+    myPath.addLatLng([lat, lng]);
+    const pPoints = myPath.getLatLngs();
+    if (pPoints.length > MAX_PATH_POINTS) myPath.setLatLngs(pPoints.slice(1));
 }
 
 function flushOfflineBuffer() {
     if (offlineBuffer.length > 0) {
-        console.log(`[Cloud] Burst Syncing ${offlineBuffer.length} points...`);
-        offlineBuffer.forEach(data => {
-            socket.emit('send-location', data);
-            txCount++;
-        });
+        offlineBuffer.forEach(data => { socket.emit('send-location', data); txCount++; });
         if (elTxCount) elTxCount.textContent = txCount;
         offlineBuffer.length = 0;
         showToast("Offline data synced!", "success");
     }
 }
 
-// --- 5. CLOUD LISTENERS (Laptop Mode) ---
+// --- 6. CLOUD LISTENERS (Laptop Mode) ---
 socket.on('receive-location', (data) => {
-    rxCount++;
-    if (elRxCount) elRxCount.textContent = rxCount;
+    const { id, busName, lat, lng, speed, accuracy } = data;
+    const unitTag = busName || id; // Prioritize Static ID
 
-    const { id, lat, lng, speed, accuracy } = data;
+    // Prevent mirroring: Don't track ourselves as a "peer"
+    if (unitTag === BUS_UNIT_ID) return;
+
+    rxCount++; if (elRxCount) elRxCount.textContent = rxCount;
+    if (!fleetUIElements[unitTag]) createFleetCard(unitTag);
     
-    // Create UI card for peer if it doesn't exist
-    if (!fleetUIElements[id]) createFleetCard(id);
-    
-    const ui = fleetUIElements[id];
+    const ui = fleetUIElements[unitTag];
     ui.lat.textContent = lat.toFixed(5);
     ui.lng.textContent = lng.toFixed(5);
     
@@ -176,19 +194,23 @@ socket.on('receive-location', (data) => {
         ui.dist.textContent = d > 1000 ? (d/1000).toFixed(2) + 'km' : Math.round(d) + 'm';
     }
 
-    // Map Marker Logic
-    if (!fleetMarkers[id]) {
-        fleetMarkers[id] = L.marker([lat, lng], { icon: peerIcon }).addTo(map);
+    if (!fleetMarkers[unitTag]) {
+        fleetMarkers[unitTag] = L.marker([lat, lng], { icon: peerIcon }).addTo(map);
     } else {
-        fleetMarkers[id].setLatLng([lat, lng]);
+        fleetMarkers[unitTag].setLatLng([lat, lng]);
     }
-    updateMapBounds();
+
+    if (!fleetPaths[unitTag]) {
+        fleetPaths[unitTag] = L.polyline([], { color: '#4CAF50', weight: 4, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    }
+    fleetPaths[unitTag].addLatLng([lat, lng]);
+    const pPoints = fleetPaths[unitTag].getLatLngs();
+    if (pPoints.length > MAX_PATH_POINTS) fleetPaths[unitTag].setLatLngs(pPoints.slice(1));
 });
 
 socket.on('unit-disconnected', (id) => {
-    if (fleetMarkers[id]) { map.removeLayer(fleetMarkers[id]); delete fleetMarkers[id]; }
-    if (fleetUIElements[id]) { peersContainer.removeChild(fleetUIElements[id].card); delete fleetUIElements[id]; }
-    updateMapBounds();
+    // In static mode, we don't immediately remove markers based on socket.id
+    // to prevent flickering. markers stay until the app refreshes or a timeout.
 });
 
 function createFleetCard(id) {
@@ -196,7 +218,7 @@ function createFleetCard(id) {
     card.className = 'card';
     card.innerHTML = `
         <h2 style="color:#4CAF50; margin-bottom:2px;"><i class="fa-solid fa-car-side"></i> Fleet Unit</h2>
-        <div style="font-size:0.7rem; color:#888; margin-bottom:10px;">ID: ${id.substring(0,6)}</div>
+        <div style="font-size:0.7rem; color:#888; margin-bottom:10px;">ID: ${id}</div>
         <div class="data-row"><span class="data-label">Lat:</span><span class="data-value" id="lat-${id}">--</span></div>
         <div class="data-row"><span class="data-label">Lng:</span><span class="data-value" id="lng-${id}">--</span></div>
         <div class="data-row"><span class="data-label">Dist:</span><span class="data-value" id="dist-${id}">--</span></div>
@@ -210,34 +232,35 @@ function createFleetCard(id) {
     };
 }
 
-function updateMapBounds() {
-    const group = [];
-    if (myMarker) group.push(myMarker.getLatLng());
-    Object.values(fleetMarkers).forEach(m => group.push(m.getLatLng()));
-    if (group.length > 1) map.fitBounds(L.latLngBounds(group), { padding: [50, 50] });
-    else if (group.length === 1) map.panTo(group[0]);
-}
+// --- 7. UI TOGGLES ---
+const btnFollow = document.getElementById('follow-toggle');
+btnFollow.addEventListener('click', () => {
+    followMe = !followMe;
+    btnFollow.textContent = followMe ? "ON" : "OFF";
+    btnFollow.style.background = followMe ? "#4CAF50" : "#888";
+    if (followMe && lastEmittedPosition) {
+        map.setView([lastEmittedPosition.lat, lastEmittedPosition.lng], 17);
+    }
+});
 
-// --- 6. GEOLOCATION WATCHER ---
+// --- 8. GEOLOCATION WATCHER ---
 if ("geolocation" in navigator) {
     navigator.geolocation.watchPosition(
         (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
-        (err) => { console.error(err); document.getElementById('geo-status').textContent = "GPS Error"; },
+        (err) => { console.error(err); },
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
 }
 
-// --- 7. UTILS ---
 document.getElementById('refresh-btn').addEventListener('click', () => window.location.reload());
 document.getElementById('my-id').addEventListener('click', () => {
-    navigator.clipboard.writeText(socket.id);
-    showToast("Full ID copied!", "success");
+    navigator.clipboard.writeText(BUS_UNIT_ID);
+    showToast("Unit ID copied!", "success");
 });
 
-// Sidebar Toggle
-let isCollapsed = false;
 document.getElementById('sidebar-header').addEventListener('click', () => {
-    isCollapsed = !isCollapsed;
-    document.getElementById('sidebar-content').style.display = isCollapsed ? 'none' : 'flex';
-    document.getElementById('toggle-btn').querySelector('i').className = isCollapsed ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down';
+    const content = document.getElementById('sidebar-content');
+    const isHidden = content.style.display === 'none';
+    content.style.display = isHidden ? 'flex' : 'none';
+    document.getElementById('toggle-btn').querySelector('i').className = isHidden ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up';
 });

@@ -23,17 +23,16 @@ io.on('connection', (socket) => {
 
     // Receive location from a phone/unit
     socket.on('send-location', (data) => {
-        // Broadcast to all other connected clients (laptops/other units)
-        // Adding the sender id so the frontend can identify them
+        // Broadcast using the client's busName as the key
         socket.broadcast.emit('receive-location', { 
-            id: socket.id, 
+            id: data.busName || socket.id, // Fallback to id if busName is missing
             ...data 
         });
     });
 
     socket.on('disconnect', () => {
         console.log(`[CLOUD] Unit Unlinked: ${socket.id}`);
-        // Notify others to remove this unit from their map
+        // We broadcast a disconnect signal, but script.js handles the 5s grace window
         io.emit('unit-disconnected', socket.id);
     });
 });
