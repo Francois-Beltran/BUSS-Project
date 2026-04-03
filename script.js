@@ -1,6 +1,6 @@
 /**
- * BUSS TRACKER - CLOUD MIGRATION + EXTREME BACKGROUND PERSISTENCE
- * Refactored for deep pocket-tracking with Audio + Video + CPU Locks.
+ * BUSS TRACKER - CLOUD MIGRATION + RELENTLESS PERSISTENCE (V3)
+ * Optimized for pocket-tracking using Location Nudges and Dim-Mode.
  */
 
 // --- 1. RANDOM IDENTITY ENGINE ---
@@ -23,23 +23,33 @@ const BUS_UNIT_ID = getPersistentIdentity();
 let followTarget = null; 
 let isExtremeTracking = false;
 
-// --- 2. EXTREME PERSISTENCE ENGINE ---
+// --- 2. RELENTLESS PERSISTENCE (V3) ---
 let audioContext = null;
 let silentBuffer = null;
 const bgVideo = document.getElementById('bg-video');
 const startFleetBtn = document.getElementById('start-fleet-btn');
+const dimModeBtn = document.getElementById('dim-mode-btn');
+const dimOverlay = document.getElementById('dim-overlay');
+
+// WEB WORKER HEARTBEAT
+let trackerWorker = null;
+if (window.Worker) {
+    trackerWorker = new Worker('worker.js');
+    trackerWorker.onmessage = (e) => {
+        if (e.data === 'nudge') {
+            triggerLocationNudge();
+        }
+    };
+}
 
 async function startExtremeTracking() {
     if (isExtremeTracking) return;
+    showToast("Relentless Tracking Active", "success");
     
-    showToast("Activating Extreme Tracking...", "success");
-    
-    // A. Audio Heartbeat
+    // A. Multimedia Loophole
     try {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            silentBuffer = audioContext.createBuffer(1, 1, 22050);
-        }
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        silentBuffer = audioContext.createBuffer(1, 1, 22050);
         function playSilence() {
             const source = audioContext.createBufferSource();
             source.buffer = silentBuffer;
@@ -48,46 +58,61 @@ async function startExtremeTracking() {
             source.start(0);
         }
         playSilence();
-    } catch (e) { console.error("Audio Persistence Error:", e); }
+    } catch (e) {}
 
-    // B. Video Heartbeat (Deep Sleep Prevention)
-    if (bgVideo) {
-        bgVideo.play().catch(e => console.warn("Video Loop Blocked:", e));
-    }
+    if (bgVideo) bgVideo.play().catch(() => {});
 
-    // C. CPU & System Locks
+    // B. System & CPU Locks
     requestWakeLock();
     if ('locks' in navigator) {
         navigator.locks.request('buss_background_sync', { ifAvailable: true }, async (lock) => {
-            if (lock) await new Promise(() => {}); // Hold forever
+            if (lock) await new Promise(() => {}); 
         });
     }
 
-    // D. Aggressive GPS Hardware Tuning
+    // C. Begin Aggressive Hardware Tracking
     startAggressiveGeolocation();
+    
+    // Start Worker Nudging
+    if (trackerWorker) trackerWorker.postMessage('start');
 
     isExtremeTracking = true;
     startFleetBtn.innerHTML = '<i class="fa-solid fa-shield-halved"></i> FLEET ACTIVE';
     startFleetBtn.style.background = "linear-gradient(135deg, #4CAF50 0%, #388E3C 100%)";
-    startFleetBtn.style.boxShadow = "0 4px 20px rgba(76, 175, 80, 0.4)";
+}
+
+function triggerLocationNudge() {
+    // Manually nudge the hardware to wake up GPS
+    navigator.geolocation.getCurrentPosition(
+        (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
+        (err) => { console.warn("[BUSS] Nudge Failed:", err.message); },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
 }
 
 function startAggressiveGeolocation() {
     if ("geolocation" in navigator) {
-        // Clear old watcher if any
         if (window.geoWatcher) navigator.geolocation.clearWatch(window.geoWatcher);
-        
         window.geoWatcher = navigator.geolocation.watchPosition(
             (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
             (err) => { console.error("GPS Error:", err); },
-            { 
-                enableHighAccuracy: true, 
-                maximumAge: 0,           // Force hardware to refresh
-                timeout: Infinity        // Never give up on a signal
-            }
+            { enableHighAccuracy: true, maximumAge: 0, timeout: Infinity }
         );
     }
 }
+
+// --- 3. DIM MODE (POWER PERSISTENCE) ---
+function toggleDimMode() {
+    const isHidden = dimOverlay.style.display === 'none';
+    dimOverlay.style.display = isHidden ? 'flex' : 'none';
+    if (isHidden) {
+        requestWakeLock(); // Re-ensure screen stays on
+        showToast("Dim Mode Active", "success");
+    }
+}
+
+dimOverlay.addEventListener('dblclick', toggleDimMode);
+if (dimModeBtn) dimModeBtn.addEventListener('click', toggleDimMode);
 
 document.addEventListener('visibilitychange', () => {
     const elWakeStatus = document.getElementById('wake-status');
@@ -99,7 +124,7 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// --- 3. SMOOTH ANIMATION (LERP) ---
+// --- 4. SMOOTH ANIMATION (LERP) ---
 function animateMarkerTo(marker, targetLat, targetLng, duration = 1000) {
     const startLat = marker.getLatLng().lat;
     const startLng = marker.getLatLng().lng;
@@ -116,7 +141,7 @@ function animateMarkerTo(marker, targetLat, targetLng, duration = 1000) {
     requestAnimationFrame(step);
 }
 
-// --- 4. TOAST NOTIFICATIONS ---
+// --- 5. TOAST NOTIFICATIONS ---
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -127,7 +152,7 @@ function showToast(message, type = 'success') {
     setTimeout(() => { if (container.contains(toast)) container.removeChild(toast); }, 4000);
 }
 
-// --- 5. MAP INITIALIZATION ---
+// --- 6. MAP INITIALIZATION ---
 let wakeLock = null;
 async function requestWakeLock() {
     if ('wakeLock' in navigator && !wakeLock) {
@@ -148,10 +173,10 @@ let myMarker = null;
 const fleetMarkers = {}; 
 const fleetUIElements = {}; 
 
-// --- 6. CLOUD CONNECTION (Extreme Tuning) ---
+// --- 7. CLOUD CONNECTION ---
 const socket = io('https://buss-project.onrender.com', {
     reconnection: true,
-    reconnectionDelay: 1000, // Near-instant 1s reconnect
+    reconnectionDelay: 1000,
     reconnectionAttempts: Infinity
 });
 
@@ -163,7 +188,6 @@ socket.on('connect', () => {
     elStatus.textContent = "Synced to Cloud";
     elStatus.style.color = "#4CAF50";
     elMyId.textContent = BUS_UNIT_ID;
-    showToast(`Unit Synchronized`, "success");
     flushOfflineBuffer();
 });
 
@@ -172,7 +196,7 @@ socket.on('disconnect', () => {
     elStatus.style.color = "#FF5722";
 });
 
-// --- 7. SNAP-TO-ROAD (OSRM API) ---
+// --- 8. SNAP-TO-ROAD (OSRM API) ---
 async function fetchSnappedLocation(lat, lng) {
     try {
         const response = await fetch(`https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=1`);
@@ -184,7 +208,7 @@ async function fetchSnappedLocation(lat, lng) {
     return { lat, lng };
 }
 
-// --- 8. SMOOTHING & TELEMETRY ---
+// --- 9. SMOOTHING & TELEMETRY ---
 const localSmoothingBuffer = [];
 const DISTANCE_THRESHOLD = 2; 
 const ACCURACY_THRESHOLD = 100; 
@@ -255,7 +279,7 @@ function flushOfflineBuffer() {
     }
 }
 
-// --- 9. CLOUD LISTENERS ---
+// --- 10. CLOUD LISTENERS ---
 socket.on('receive-location', (data) => {
     const { id, busName, lat, lng, speed, accuracy } = data;
     const unitTag = busName || id;
@@ -282,7 +306,7 @@ function createFleetCard(id) {
     fleetUIElements[id] = { card, lat: document.getElementById(`lat-${id}`), lng: document.getElementById(`lng-${id}`) };
 }
 
-// --- 10. UI HANDLERS ---
+// --- 11. UI HANDLERS ---
 startFleetBtn.addEventListener('click', startExtremeTracking);
 
 const followInput = document.getElementById('follow-input');
@@ -293,8 +317,8 @@ if (followInput) {
     });
 }
 
-// --- 11. INITIAL WATCHER (Low Power until START clicked) ---
-window.geoWatcher = navigator.geolocation.watchPosition(
+// INITIAL GPS
+navigator.geolocation.watchPosition(
     (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
     (err) => { console.error(err); },
     { enableHighAccuracy: true, maximumAge: 30000, timeout: 27000 }
