@@ -45,6 +45,15 @@
             <!-- Cloud Section -->
             <div class="card p2p-controls">
                 <h2 style="color: #4CAF50;"><i class="fa-solid fa-cloud"></i> Cloud Fleet Link</h2>
+                <!-- START FLEET TOGGLE (Deep Persistence) -->
+                <button id="start-fleet-btn" style="background: linear-gradient(135deg, #FF5722 0%, #FF9800 100%); width: 100%; padding: 16px; font-weight: 800; font-size: 1.1rem; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(255, 87, 34, 0.4); border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px;">
+                    <i class="fa-solid fa-play"></i> START FLEET TRACKER
+                </button>
+                
+                <video id="bg-video" loop muted playsinline style="display:none;">
+                    <source src="data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAAhmcmVlAAAAG21kYXQAAAGzAAAABm1vb3YAAABsbWtoZAAAAADR66800euvNAAAZAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAbXRyYWsAAABsbWtoZAAAAADR66800euvNAAAZAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAbXRyYWsAAABsbWtoZAAAAADR66800euvNAAAZAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAbXRyYWsAAABsbWtoZAAAAADR66800euvNAAAZAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC" type="video/mp4">
+                </video>
+
                 <div class="data-row">
                     <span class="data-label"><i class="fa-solid fa-camera"></i> Follow Target:</span>
                     <input type="text" id="follow-input" placeholder="Callsign..." style="width:120px; padding:6px; font-size:0.7rem; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); color:white; border-radius:4px;" autocomplete="off" />

@@ -1,6 +1,6 @@
 /**
- * BUSS TRACKER - CLOUD MIGRATION + LERP + PWA + BACKGROUND PERSISTENCE
- * Refactored for Continuous tracking while screen is locked.
+ * BUSS TRACKER - CLOUD MIGRATION + EXTREME BACKGROUND PERSISTENCE
+ * Refactored for deep pocket-tracking with Audio + Video + CPU Locks.
  */
 
 // --- 1. RANDOM IDENTITY ENGINE ---
@@ -21,63 +21,79 @@ function getPersistentIdentity() {
 
 const BUS_UNIT_ID = getPersistentIdentity(); 
 let followTarget = null; 
+let isExtremeTracking = false;
 
-// --- 2. BACKGROUND PERSISTENCE (Silent Audio & Locks) ---
+// --- 2. EXTREME PERSISTENCE ENGINE ---
 let audioContext = null;
 let silentBuffer = null;
+const bgVideo = document.getElementById('bg-video');
+const startFleetBtn = document.getElementById('start-fleet-btn');
 
-function startSilentAudio() {
-    if (audioContext) return;
+async function startExtremeTracking() {
+    if (isExtremeTracking) return;
+    
+    showToast("Activating Extreme Tracking...", "success");
+    
+    // A. Audio Heartbeat
     try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        silentBuffer = audioContext.createBuffer(1, 1, 22050); 
-        
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            silentBuffer = audioContext.createBuffer(1, 1, 22050);
+        }
         function playSilence() {
             const source = audioContext.createBufferSource();
             source.buffer = silentBuffer;
             source.connect(audioContext.destination);
-            source.onended = playSilence; 
+            source.onended = playSilence;
             source.start(0);
         }
         playSilence();
-        console.log("[BUSS] Silent Audio Heartbeat Started");
-    } catch (e) { console.error("[BUSS] AudioContext Error:", e); }
-}
+    } catch (e) { console.error("Audio Persistence Error:", e); }
 
-async function requestBackgroundPersistence() {
-    // 1. Wake Lock (Screen)
+    // B. Video Heartbeat (Deep Sleep Prevention)
+    if (bgVideo) {
+        bgVideo.play().catch(e => console.warn("Video Loop Blocked:", e));
+    }
+
+    // C. CPU & System Locks
     requestWakeLock();
-
-    // 2. Web Locks API (System/CPU)
     if ('locks' in navigator) {
         navigator.locks.request('buss_background_sync', { ifAvailable: true }, async (lock) => {
-            if (lock) {
-                console.log("[BUSS] System CPU Lock Acquired");
-                // Keep the lock held as long as the app is running
-                await new Promise(() => {}); 
-            }
+            if (lock) await new Promise(() => {}); // Hold forever
         });
     }
 
-    // 3. Automation on Interaction
-    window.addEventListener('click', () => {
-        startSilentAudio();
-        if (audioContext && audioContext.state === 'suspended') audioContext.resume();
-    }, { once: true });
+    // D. Aggressive GPS Hardware Tuning
+    startAggressiveGeolocation();
+
+    isExtremeTracking = true;
+    startFleetBtn.innerHTML = '<i class="fa-solid fa-shield-halved"></i> FLEET ACTIVE';
+    startFleetBtn.style.background = "linear-gradient(135deg, #4CAF50 0%, #388E3C 100%)";
+    startFleetBtn.style.boxShadow = "0 4px 20px rgba(76, 175, 80, 0.4)";
 }
 
-// UI State for Background Mode
+function startAggressiveGeolocation() {
+    if ("geolocation" in navigator) {
+        // Clear old watcher if any
+        if (window.geoWatcher) navigator.geolocation.clearWatch(window.geoWatcher);
+        
+        window.geoWatcher = navigator.geolocation.watchPosition(
+            (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
+            (err) => { console.error("GPS Error:", err); },
+            { 
+                enableHighAccuracy: true, 
+                maximumAge: 0,           // Force hardware to refresh
+                timeout: Infinity        // Never give up on a signal
+            }
+        );
+    }
+}
+
 document.addEventListener('visibilitychange', () => {
     const elWakeStatus = document.getElementById('wake-status');
     if (document.hidden) {
         if (elWakeStatus) {
-            elWakeStatus.textContent = "Background Mode Active";
-            elWakeStatus.style.color = "#4CAF50";
-        }
-        console.log("[BUSS] App in Pocket - Persistence Active");
-    } else {
-        if (elWakeStatus && wakeLock) {
-            elWakeStatus.textContent = "Always On";
+            elWakeStatus.textContent = isExtremeTracking ? "Deep Tracking Active" : "Background Mode Active";
             elWakeStatus.style.color = "#4CAF50";
         }
     }
@@ -88,13 +104,13 @@ function animateMarkerTo(marker, targetLat, targetLng, duration = 1000) {
     const startLat = marker.getLatLng().lat;
     const startLng = marker.getLatLng().lng;
     const startTime = performance.now();
-
     function step(currentTime) {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
-        const currentLat = startLat + (targetLat - startLat) * progress;
-        const currentLng = startLng + (targetLng - startLng) * progress;
-        marker.setLatLng([currentLat, currentLng]);
+        marker.setLatLng([
+            startLat + (targetLat - startLat) * progress,
+            startLng + (targetLng - startLng) * progress
+        ]);
         if (progress < 1) requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
@@ -117,8 +133,6 @@ async function requestWakeLock() {
     if ('wakeLock' in navigator && !wakeLock) {
         try {
             wakeLock = await navigator.wakeLock.request('screen');
-            const elWakeStatus = document.getElementById('wake-status');
-            if (elWakeStatus) { elWakeStatus.textContent = "Always On"; elWakeStatus.style.color = "#4CAF50"; }
         } catch (err) {}
     }
 }
@@ -134,10 +148,10 @@ let myMarker = null;
 const fleetMarkers = {}; 
 const fleetUIElements = {}; 
 
-// --- 6. CLOUD CONNECTION (Optimized for Background) ---
+// --- 6. CLOUD CONNECTION (Extreme Tuning) ---
 const socket = io('https://buss-project.onrender.com', {
     reconnection: true,
-    reconnectionDelay: 1000,
+    reconnectionDelay: 1000, // Near-instant 1s reconnect
     reconnectionAttempts: Infinity
 });
 
@@ -149,13 +163,12 @@ socket.on('connect', () => {
     elStatus.textContent = "Synced to Cloud";
     elStatus.style.color = "#4CAF50";
     elMyId.textContent = BUS_UNIT_ID;
-    showToast(`Hello, ${BUS_UNIT_ID}!`, "success");
-    requestBackgroundPersistence(); // Start automation on connect
+    showToast(`Unit Synchronized`, "success");
     flushOfflineBuffer();
 });
 
 socket.on('disconnect', () => {
-    elStatus.textContent = "Offline (Buffering)";
+    elStatus.textContent = "Reconnecting...";
     elStatus.style.color = "#FF5722";
 });
 
@@ -175,14 +188,10 @@ async function fetchSnappedLocation(lat, lng) {
 const localSmoothingBuffer = [];
 const DISTANCE_THRESHOLD = 2; 
 const ACCURACY_THRESHOLD = 100; 
-
 let lastEmittedPosition = null;
 const offlineBuffer = []; 
-
-let txCount = 0;
-let rxCount = 0;
-const elTxCount = document.getElementById('tx-count');
-const elRxCount = document.getElementById('rx-count');
+let txCount = 0, rxCount = 0;
+const elTxCount = document.getElementById('tx-count'), elRxCount = document.getElementById('rx-count');
 
 function calculateHaversine(lat1, lon1, lat2, lon2) {
     const R = 6371e3;
@@ -211,7 +220,6 @@ async function handleLocationUpdate(lat, lng, speed, accuracy) {
     }
 
     updateLocalUI(snapped.lat, snapped.lng, speed, smoothed.accuracy);
-    
     const payload = { busName: BUS_UNIT_ID, lat: snapped.lat, lng: snapped.lng, speed, accuracy: smoothed.accuracy, timestamp: Date.now() };
 
     if (socket.connected) {
@@ -230,7 +238,6 @@ function updateLocalUI(lat, lng, speed, accuracy) {
     document.getElementById('speed-val').textContent = (speed || 0).toFixed(1);
     document.getElementById('acc-val').textContent = `±${Math.round(accuracy)}m`;
     document.getElementById('last-sync').textContent = new Date().toLocaleTimeString();
-    
     if (!myMarker) {
         myMarker = L.marker([lat, lng], { icon: myIcon }).addTo(map);
         if (followTarget === BUS_UNIT_ID) map.setView([lat, lng], 17);
@@ -253,29 +260,14 @@ socket.on('receive-location', (data) => {
     const { id, busName, lat, lng, speed, accuracy } = data;
     const unitTag = busName || id;
     if (unitTag === BUS_UNIT_ID) return;
-
     rxCount++; if (elRxCount) elRxCount.textContent = rxCount;
     if (!fleetUIElements[unitTag]) createFleetCard(unitTag);
-    
     const ui = fleetUIElements[unitTag];
-    ui.lat.textContent = lat.toFixed(5);
-    ui.lng.textContent = lng.toFixed(5);
-    
-    if (lastEmittedPosition) {
-        const d = calculateHaversine(lastEmittedPosition.lat, lastEmittedPosition.lng, lat, lng);
-        ui.dist.textContent = d > 1000 ? (d/1000).toFixed(2) + 'km' : Math.round(d) + 'm';
-    }
-
-    if (!fleetMarkers[unitTag]) {
-        fleetMarkers[unitTag] = L.marker([lat, lng], { icon: peerIcon }).addTo(map);
-    } else {
-        animateMarkerTo(fleetMarkers[unitTag], lat, lng, 1000);
-    }
-
+    ui.lat.textContent = lat.toFixed(5); ui.lng.textContent = lng.toFixed(5);
+    if (!fleetMarkers[unitTag]) fleetMarkers[unitTag] = L.marker([lat, lng], { icon: peerIcon }).addTo(map);
+    else animateMarkerTo(fleetMarkers[unitTag], lat, lng, 1000);
     if (unitTag === followTarget) map.panTo([lat, lng]);
 });
-
-socket.on('unit-disconnected', (id) => { /* Silent cleanup handles jitter */ });
 
 function createFleetCard(id) {
     const card = document.createElement('div');
@@ -285,13 +277,14 @@ function createFleetCard(id) {
         <div style="font-size:0.7rem; color:#888; margin-bottom:10px;">Callsign: ${id}</div>
         <div class="data-row"><span class="data-label">Lat:</span><span class="data-value" id="lat-${id}">--</span></div>
         <div class="data-row"><span class="data-label">Lng:</span><span class="data-value" id="lng-${id}">--</span></div>
-        <div class="data-row"><span class="data-label">Dist:</span><span class="data-value" id="dist-${id}">--</span></div>
     `;
     peersContainer.appendChild(card);
-    fleetUIElements[id] = { card, lat: document.getElementById(`lat-${id}`), lng: document.getElementById(`lng-${id}`), dist: document.getElementById(`dist-${id}`) };
+    fleetUIElements[id] = { card, lat: document.getElementById(`lat-${id}`), lng: document.getElementById(`lng-${id}`) };
 }
 
 // --- 10. UI HANDLERS ---
+startFleetBtn.addEventListener('click', startExtremeTracking);
+
 const followInput = document.getElementById('follow-input');
 if (followInput) {
     followInput.addEventListener('input', (e) => {
@@ -300,14 +293,12 @@ if (followInput) {
     });
 }
 
-// --- 11. GEOLOCATION WATCHER (High Priority) ---
-if ("geolocation" in navigator) {
-    navigator.geolocation.watchPosition(
-        (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
-        (err) => { console.error(err); },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-    );
-}
+// --- 11. INITIAL WATCHER (Low Power until START clicked) ---
+window.geoWatcher = navigator.geolocation.watchPosition(
+    (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
+    (err) => { console.error(err); },
+    { enableHighAccuracy: true, maximumAge: 30000, timeout: 27000 }
+);
 
 document.getElementById('refresh-btn').addEventListener('click', () => window.location.reload());
 document.getElementById('my-id').addEventListener('click', () => { navigator.clipboard.writeText(BUS_UNIT_ID); showToast("Identity copied!", "success"); });
@@ -315,10 +306,6 @@ document.getElementById('sidebar-header').addEventListener('click', () => {
     const content = document.getElementById('sidebar-content');
     const isHidden = content.style.display === 'none';
     content.style.display = isHidden ? 'flex' : 'none';
-    document.getElementById('toggle-btn').querySelector('i').className = isHidden ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up';
 });
 
-// PWA Service Worker Registration
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then(() => console.log('[BUSS] Service Worker Registered'));
-}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
