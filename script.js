@@ -1,6 +1,6 @@
 /**
- * BUSS TRACKER - CLOUD MIGRATION + LERP ANIMATIONS + PWA
- * Refactored for Smooth Gliding movement & Standalone App Support
+ * BUSS TRACKER - CLOUD MIGRATION + LERP + PWA + BACKGROUND PERSISTENCE
+ * Refactored for Continuous tracking while screen is locked.
  */
 
 // --- 1. RANDOM IDENTITY ENGINE ---
@@ -22,8 +22,68 @@ function getPersistentIdentity() {
 const BUS_UNIT_ID = getPersistentIdentity(); 
 let followTarget = null; 
 
-// --- 2. SMOOTH ANIMATION (LERP) ---
-// Animates a marker from its current position to a new position over time
+// --- 2. BACKGROUND PERSISTENCE (Silent Audio & Locks) ---
+let audioContext = null;
+let silentBuffer = null;
+
+function startSilentAudio() {
+    if (audioContext) return;
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        silentBuffer = audioContext.createBuffer(1, 1, 22050); 
+        
+        function playSilence() {
+            const source = audioContext.createBufferSource();
+            source.buffer = silentBuffer;
+            source.connect(audioContext.destination);
+            source.onended = playSilence; 
+            source.start(0);
+        }
+        playSilence();
+        console.log("[BUSS] Silent Audio Heartbeat Started");
+    } catch (e) { console.error("[BUSS] AudioContext Error:", e); }
+}
+
+async function requestBackgroundPersistence() {
+    // 1. Wake Lock (Screen)
+    requestWakeLock();
+
+    // 2. Web Locks API (System/CPU)
+    if ('locks' in navigator) {
+        navigator.locks.request('buss_background_sync', { ifAvailable: true }, async (lock) => {
+            if (lock) {
+                console.log("[BUSS] System CPU Lock Acquired");
+                // Keep the lock held as long as the app is running
+                await new Promise(() => {}); 
+            }
+        });
+    }
+
+    // 3. Automation on Interaction
+    window.addEventListener('click', () => {
+        startSilentAudio();
+        if (audioContext && audioContext.state === 'suspended') audioContext.resume();
+    }, { once: true });
+}
+
+// UI State for Background Mode
+document.addEventListener('visibilitychange', () => {
+    const elWakeStatus = document.getElementById('wake-status');
+    if (document.hidden) {
+        if (elWakeStatus) {
+            elWakeStatus.textContent = "Background Mode Active";
+            elWakeStatus.style.color = "#4CAF50";
+        }
+        console.log("[BUSS] App in Pocket - Persistence Active");
+    } else {
+        if (elWakeStatus && wakeLock) {
+            elWakeStatus.textContent = "Always On";
+            elWakeStatus.style.color = "#4CAF50";
+        }
+    }
+});
+
+// --- 3. SMOOTH ANIMATION (LERP) ---
 function animateMarkerTo(marker, targetLat, targetLng, duration = 1000) {
     const startLat = marker.getLatLng().lat;
     const startLng = marker.getLatLng().lng;
@@ -32,21 +92,15 @@ function animateMarkerTo(marker, targetLat, targetLng, duration = 1000) {
     function step(currentTime) {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
-
-        // Linear Interpolation (LERP)
         const currentLat = startLat + (targetLat - startLat) * progress;
         const currentLng = startLng + (targetLng - startLng) * progress;
-
         marker.setLatLng([currentLat, currentLng]);
-
-        if (progress < 1) {
-            requestAnimationFrame(step);
-        }
+        if (progress < 1) requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
 }
 
-// --- 3. TOAST NOTIFICATIONS ---
+// --- 4. TOAST NOTIFICATIONS ---
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -57,14 +111,13 @@ function showToast(message, type = 'success') {
     setTimeout(() => { if (container.contains(toast)) container.removeChild(toast); }, 4000);
 }
 
-// --- 4. MAP INITIALIZATION ---
+// --- 5. MAP INITIALIZATION ---
 let wakeLock = null;
-const elWakeStatus = document.getElementById('wake-status');
-
 async function requestWakeLock() {
     if ('wakeLock' in navigator && !wakeLock) {
         try {
             wakeLock = await navigator.wakeLock.request('screen');
+            const elWakeStatus = document.getElementById('wake-status');
             if (elWakeStatus) { elWakeStatus.textContent = "Always On"; elWakeStatus.style.color = "#4CAF50"; }
         } catch (err) {}
     }
@@ -78,12 +131,16 @@ const myIcon = L.divIcon({ className: 'custom-marker', iconSize: [16, 16], iconA
 const peerIcon = L.divIcon({ className: 'peer-marker', iconSize: [16, 16], iconAnchor: [8, 8] });
 
 let myMarker = null;
-
 const fleetMarkers = {}; 
 const fleetUIElements = {}; 
 
-// --- 5. CLOUD CONNECTION ---
-const socket = io('https://buss-project.onrender.com');
+// --- 6. CLOUD CONNECTION (Optimized for Background) ---
+const socket = io('https://buss-project.onrender.com', {
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionAttempts: Infinity
+});
+
 const elStatus = document.getElementById('connection-status');
 const elMyId = document.getElementById('my-id');
 const peersContainer = document.getElementById('peers-container');
@@ -93,7 +150,7 @@ socket.on('connect', () => {
     elStatus.style.color = "#4CAF50";
     elMyId.textContent = BUS_UNIT_ID;
     showToast(`Hello, ${BUS_UNIT_ID}!`, "success");
-    requestWakeLock();
+    requestBackgroundPersistence(); // Start automation on connect
     flushOfflineBuffer();
 });
 
@@ -102,20 +159,19 @@ socket.on('disconnect', () => {
     elStatus.style.color = "#FF5722";
 });
 
-// --- 6. SNAP-TO-ROAD (OSRM API) ---
+// --- 7. SNAP-TO-ROAD (OSRM API) ---
 async function fetchSnappedLocation(lat, lng) {
     try {
         const response = await fetch(`https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=1`);
         const data = await response.json();
         if (data.code === 'Ok' && data.waypoints?.length > 0) {
-            const [snappedLng, snappedLat] = data.waypoints[0].location;
-            return { lat: snappedLat, lng: snappedLng };
+            return { lat: data.waypoints[0].location[1], lng: data.waypoints[0].location[0] };
         }
     } catch (e) {}
     return { lat, lng };
 }
 
-// --- 7. SMOOTHING & TELEMETRY ---
+// --- 8. SMOOTHING & TELEMETRY ---
 const localSmoothingBuffer = [];
 const DISTANCE_THRESHOLD = 2; 
 const ACCURACY_THRESHOLD = 100; 
@@ -131,17 +187,15 @@ const elRxCount = document.getElementById('rx-count');
 function calculateHaversine(lat1, lon1, lat2, lon2) {
     const R = 6371e3;
     const toRad = x => x * Math.PI / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const a = Math.sin(toRad(lat2 - lat1) / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(toRad(lon2 - lon1) / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function getSmoothedCoords(buffer) {
     if (!buffer.length) return null;
-    let latSum = 0, lngSum = 0, accSum = 0;
-    buffer.forEach(p => { latSum += p.lat; lngSum += p.lng; accSum += p.accuracy; });
-    return { lat: latSum / buffer.length, lng: lngSum / buffer.length, accuracy: accSum / buffer.length };
+    let l = buffer.length, lat = 0, lng = 0, acc = 0;
+    buffer.forEach(p => { lat += p.lat; lng += p.lng; acc += p.accuracy; });
+    return { lat: lat / l, lng: lng / l, accuracy: acc / l };
 }
 
 async function handleLocationUpdate(lat, lng, speed, accuracy) {
@@ -153,23 +207,15 @@ async function handleLocationUpdate(lat, lng, speed, accuracy) {
 
     const snapped = await fetchSnappedLocation(smoothed.lat, smoothed.lng);
     if (lastEmittedPosition) {
-        const dist = calculateHaversine(lastEmittedPosition.lat, lastEmittedPosition.lng, snapped.lat, snapped.lng);
-        if (dist < DISTANCE_THRESHOLD) return;
+        if (calculateHaversine(lastEmittedPosition.lat, lastEmittedPosition.lng, snapped.lat, snapped.lng) < DISTANCE_THRESHOLD) return;
     }
 
     updateLocalUI(snapped.lat, snapped.lng, speed, smoothed.accuracy);
     
-    const payload = { 
-        busName: BUS_UNIT_ID, 
-        lat: snapped.lat, 
-        lng: snapped.lng, 
-        speed, 
-        accuracy: smoothed.accuracy, 
-        timestamp: Date.now() 
-    };
+    const payload = { busName: BUS_UNIT_ID, lat: snapped.lat, lng: snapped.lng, speed, accuracy: smoothed.accuracy, timestamp: Date.now() };
 
     if (socket.connected) {
-        socket.emit('send-location', payload, (ack) => {
+        socket.emit('send-location', payload, () => {
             txCount++; if (elTxCount) elTxCount.textContent = txCount;
         });
     } else {
@@ -189,7 +235,6 @@ function updateLocalUI(lat, lng, speed, accuracy) {
         myMarker = L.marker([lat, lng], { icon: myIcon }).addTo(map);
         if (followTarget === BUS_UNIT_ID) map.setView([lat, lng], 17);
     } else {
-        // USE LERP ANIMATION
         animateMarkerTo(myMarker, lat, lng, 1000);
         if (followTarget === BUS_UNIT_ID) map.panTo([lat, lng]);
     }
@@ -203,11 +248,10 @@ function flushOfflineBuffer() {
     }
 }
 
-// --- 8. CLOUD LISTENERS ---
+// --- 9. CLOUD LISTENERS ---
 socket.on('receive-location', (data) => {
     const { id, busName, lat, lng, speed, accuracy } = data;
     const unitTag = busName || id;
-
     if (unitTag === BUS_UNIT_ID) return;
 
     rxCount++; if (elRxCount) elRxCount.textContent = rxCount;
@@ -225,14 +269,13 @@ socket.on('receive-location', (data) => {
     if (!fleetMarkers[unitTag]) {
         fleetMarkers[unitTag] = L.marker([lat, lng], { icon: peerIcon }).addTo(map);
     } else {
-        // USE LERP ANIMATION
         animateMarkerTo(fleetMarkers[unitTag], lat, lng, 1000);
     }
 
-    if (unitTag === followTarget) {
-        map.panTo([lat, lng]);
-    }
+    if (unitTag === followTarget) map.panTo([lat, lng]);
 });
+
+socket.on('unit-disconnected', (id) => { /* Silent cleanup handles jitter */ });
 
 function createFleetCard(id) {
     const card = document.createElement('div');
@@ -245,44 +288,29 @@ function createFleetCard(id) {
         <div class="data-row"><span class="data-label">Dist:</span><span class="data-value" id="dist-${id}">--</span></div>
     `;
     peersContainer.appendChild(card);
-    fleetUIElements[id] = {
-        card: card,
-        lat: document.getElementById(`lat-${id}`),
-        lng: document.getElementById(`lng-${id}`),
-        dist: document.getElementById(`dist-${id}`)
-    };
+    fleetUIElements[id] = { card, lat: document.getElementById(`lat-${id}`), lng: document.getElementById(`lng-${id}`), dist: document.getElementById(`dist-${id}`) };
 }
 
-// --- 9. UI HANDLERS ---
+// --- 10. UI HANDLERS ---
 const followInput = document.getElementById('follow-input');
 if (followInput) {
     followInput.addEventListener('input', (e) => {
         followTarget = e.target.value.trim();
-        if (followTarget) {
-            if (followTarget === BUS_UNIT_ID && lastEmittedPosition) {
-                 map.panTo([lastEmittedPosition.lat, lastEmittedPosition.lng]);
-            } else if (fleetMarkers[followTarget]) {
-                 map.panTo(fleetMarkers[followTarget].getLatLng());
-            }
-        }
+        if (followTarget && fleetMarkers[followTarget]) map.panTo(fleetMarkers[followTarget].getLatLng());
     });
 }
 
-// --- 10. GEOLOCATION WATCHER ---
+// --- 11. GEOLOCATION WATCHER (High Priority) ---
 if ("geolocation" in navigator) {
     navigator.geolocation.watchPosition(
         (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
         (err) => { console.error(err); },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
     );
 }
 
 document.getElementById('refresh-btn').addEventListener('click', () => window.location.reload());
-document.getElementById('my-id').addEventListener('click', () => {
-    navigator.clipboard.writeText(BUS_UNIT_ID);
-    showToast("Identity copied!", "success");
-});
-
+document.getElementById('my-id').addEventListener('click', () => { navigator.clipboard.writeText(BUS_UNIT_ID); showToast("Identity copied!", "success"); });
 document.getElementById('sidebar-header').addEventListener('click', () => {
     const content = document.getElementById('sidebar-content');
     const isHidden = content.style.display === 'none';
@@ -292,7 +320,5 @@ document.getElementById('sidebar-header').addEventListener('click', () => {
 
 // PWA Service Worker Registration
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then(() => {
-        console.log('[BUSS] Service Worker Registered');
-    });
+    navigator.serviceWorker.register('./sw.js').then(() => console.log('[BUSS] Service Worker Registered'));
 }
