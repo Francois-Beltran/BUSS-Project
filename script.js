@@ -54,7 +54,14 @@ const myIcon = L.divIcon({ className: 'custom-marker', iconSize: [16, 16], iconA
 const peerIcon = L.divIcon({ className: 'peer-marker', iconSize: [16, 16], iconAnchor: [8, 8] });
 
 let myMarker = null;
-let myPath = L.polyline([], { color: '#FF5722', weight: 4, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+let myPath = L.polyline([], { 
+    color: '#FF5722', 
+    weight: 4, 
+    opacity: 0.6, 
+    lineCap: 'round', 
+    lineJoin: 'round',
+    smoothFactor: 2.0 // GOOGLE-STYLE Path Smoothing
+}).addTo(map);
 
 const fleetMarkers = {}; 
 const fleetPaths = {}; 
@@ -212,7 +219,14 @@ socket.on('receive-location', (data) => {
     }
 
     if (!fleetPaths[unitTag]) {
-        fleetPaths[unitTag] = L.polyline([], { color: '#4CAF50', weight: 4, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+        fleetPaths[unitTag] = L.polyline([], { 
+            color: '#4CAF50', 
+            weight: 4, 
+            opacity: 0.6, 
+            lineCap: 'round', 
+            lineJoin: 'round',
+            smoothFactor: 2.0 // GOOGLE-STYLE Path Smoothing
+        }).addTo(map);
     }
     fleetPaths[unitTag].addLatLng([lat, lng]);
     const pPoints = fleetPaths[unitTag].getLatLngs();
