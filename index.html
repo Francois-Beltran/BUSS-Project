@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BUSS Tracker</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Google Fonts: Montserrat -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Local Styles -->
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- PWA / iOS Specifics -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FF5722">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="BUSS Tracker">
+    <link rel="apple-touch-icon" href="icon-512.png">
+</head>
+
+<body>
+    <div id="toast-container"></div>
+
+    <div id="sidebar">
+        <div id="sidebar-header"
+            style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+            <h1 style="margin-bottom: 0;"><i class="fa-solid fa-satellite-dish" style="margin-right:8px;"></i>BUSS
+                Tracker</h1>
+            <div style="display: flex; gap: 10px;">
+                <button id="refresh-btn" title="Refresh & Update"
+                    style="background: rgba(255,255,255,0.1); border: none; color: white; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; transition: all 0.3s;"><i
+                        class="fa-solid fa-rotate"></i></button>
+                <button id="toggle-btn"
+                    style="background: rgba(255,255,255,0.1); border: none; color: white; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; transition: all 0.3s;"><i
+                        class="fa-solid fa-chevron-down"></i></button>
+            </div>
+        </div>
+
+        <div id="sidebar-content" style="display: flex; flex-direction: column; gap: 20px; margin-top: 20px;">
+            <!-- P2P Section -->
+            <div class="card p2p-controls">
+                <h2 style="color: #4CAF50;"><i class="fa-solid fa-network-wired"></i> P2P Fleet Link</h2>
+                <div class="data-row">
+                    <span class="data-label"><i class="fa-solid fa-id-badge"></i> My ID:</span>
+                    <span class="data-value id-badge" id="my-id" title="Click to copy">Loading...</span>
+                </div>
+                <div class="data-row" style="margin-bottom: 0;">
+                    <input type="text" id="peer-id-input" placeholder="Enter peer ID..." autocomplete="off" />
+                </div>
+                <button id="connect-btn"><i class="fa-solid fa-bolt"></i> Connect</button>
+                <div id="connection-status" class="status">Waiting for connections...</div>
+                <div
+                    style="font-size: 0.7rem; color: #888; text-align: center; margin-top: 5px; display: flex; justify-content: center; gap: 15px; flex-wrap: wrap;">
+                    <span><i class="fa-solid fa-arrow-up"></i> Sent: <span id="tx-count">0</span></span>
+                    <span><i class="fa-solid fa-arrow-down"></i> Rcvd: <span id="rx-count">0</span></span>
+                </div>
+            </div>
+
+            <!-- My Telemetry -->
+            <div class="card">
+                <h2><i class="fa-solid fa-location-crosshairs"></i> My Telemetry</h2>
+                <div class="data-row">
+                    <span class="data-label"><i class="fa-solid fa-arrows-up-down"></i> Lat:</span>
+                    <span class="data-value" id="lat-val">--</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label"><i class="fa-solid fa-arrows-left-right"></i> Lng:</span>
+                    <span class="data-value" id="lng-val">--</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label"><i class="fa-solid fa-gauge-high"></i> Speed:</span>
+                    <span class="data-value" id="speed-val">-- <span style="font-size: 0.7rem;">m/s</span></span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label"><i class="fa-solid fa-bullseye"></i> Accuracy:</span>
+                    <span class="data-value" id="acc-val">--</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label"><i class="fa-solid fa-clock"></i> Last Sync:</span>
+                    <span class="data-value" id="last-sync">--:--:--</span>
+                </div>
+                <div class="data-row"
+                    style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                    <span class="data-label" style="font-size: 0.8rem"><i class="fa-solid fa-circle-info"></i>
+                        Status:</span>
+                    <span class="data-value" id="geo-status" style="font-size: 0.8rem; color: #FFC107;">Waiting for
+                        GPS...</span>
+                </div>
+                <div class="data-row" style="margin-top: 5px;">
+                    <span class="data-label" style="font-size: 0.8rem"><i class="fa-solid fa-sun"></i> Screen:</span>
+                    <span class="data-value" id="wake-status" style="font-size: 0.8rem; color: #888;">Standby</span>
+                </div>
+            </div>
+
+            <!-- App Installation Card -->
+            <div id="install-card" class="card"
+                style="display: none; border-left-color: #3f51b5; background: linear-gradient(135deg, rgba(63, 81, 181, 0.2), rgba(30, 30, 30, 0.5));">
+                <h2 style="color: #64b5f6;"><i class="fa-solid fa-mobile-screen-button"></i> Download App</h2>
+                <p style="font-size: 0.8rem; color: #bbb; margin-bottom: 15px; line-height: 1.4;">Install to your home
+                    screen to enable stable tracking & background sync.</p>
+                <button id="install-btn"
+                    style="background: #3f51b5; width: 100%; border: none; padding: 12px; color: white; border-radius: 8px; font-weight: 600; cursor: pointer; display: none;"><i
+                        class="fa-solid fa-download"></i> Install Now</button>
+                <div id="ios-install-info"
+                    style="display: none; font-size: 0.8rem; color: #eee; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                    <i class="fa-solid fa-share-nodes" style="color: #64b5f6;"></i> Tap <strong>Share</strong> then
+                    <strong>Add to Home Screen</strong>.
+                </div>
+            </div>
+
+            <!-- Target container for connected peers -->
+            <div id="peers-container" style="display: flex; flex-direction: column; gap: 20px;"></div>
+        </div>
+    </div>
+
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+
+    <!-- External Libs -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Local Logic -->
+    <script src="script.js"></script>
+</body>
+
+</html>
