@@ -1,18 +1,16 @@
 {
-  "name": "BUSS Tracker Fleet",
-  "short_name": "BUSS Tracker",
-  "description": "Real-time P2P Fleet and Location Tracking PoC.",
-  "start_url": "./index.html",
+  "name": "BUSS Cloud Tracker",
+  "short_name": "BUSS",
+  "description": "High-precision GPS fleet tracking dashboard.",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#0f0f0f",
   "theme_color": "#FF5722",
-  "orientation": "portrait",
   "icons": [
     {
       "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     }
   ]
 }

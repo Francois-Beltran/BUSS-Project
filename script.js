@@ -1,6 +1,6 @@
 /**
- * BUSS TRACKER - CLOUD MIGRATION + STABILITY + TARGETED FOLLOWING
- * Refactored for Targeted Tracking & Trail Cleanup
+ * BUSS TRACKER - CLOUD MIGRATION + LERP ANIMATIONS + PWA
+ * Refactored for Smooth Gliding movement & Standalone App Support
  */
 
 // --- 1. RANDOM IDENTITY ENGINE ---
@@ -20,9 +20,33 @@ function getPersistentIdentity() {
 }
 
 const BUS_UNIT_ID = getPersistentIdentity(); 
-let followTarget = null; // Stores the Callsign we are following (if any)
+let followTarget = null; 
 
-// --- 2. TOAST NOTIFICATIONS ---
+// --- 2. SMOOTH ANIMATION (LERP) ---
+// Animates a marker from its current position to a new position over time
+function animateMarkerTo(marker, targetLat, targetLng, duration = 1000) {
+    const startLat = marker.getLatLng().lat;
+    const startLng = marker.getLatLng().lng;
+    const startTime = performance.now();
+
+    function step(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Linear Interpolation (LERP)
+        const currentLat = startLat + (targetLat - startLat) * progress;
+        const currentLng = startLng + (targetLng - startLng) * progress;
+
+        marker.setLatLng([currentLat, currentLng]);
+
+        if (progress < 1) {
+            requestAnimationFrame(step);
+        }
+    }
+    requestAnimationFrame(step);
+}
+
+// --- 3. TOAST NOTIFICATIONS ---
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -33,7 +57,7 @@ function showToast(message, type = 'success') {
     setTimeout(() => { if (container.contains(toast)) container.removeChild(toast); }, 4000);
 }
 
-// --- 3. MAP INITIALIZATION ---
+// --- 4. MAP INITIALIZATION ---
 let wakeLock = null;
 const elWakeStatus = document.getElementById('wake-status');
 
@@ -54,12 +78,11 @@ const myIcon = L.divIcon({ className: 'custom-marker', iconSize: [16, 16], iconA
 const peerIcon = L.divIcon({ className: 'peer-marker', iconSize: [16, 16], iconAnchor: [8, 8] });
 
 let myMarker = null;
-// Trails removed for a cleaner look as requested
 
 const fleetMarkers = {}; 
 const fleetUIElements = {}; 
 
-// --- 4. CLOUD CONNECTION ---
+// --- 5. CLOUD CONNECTION ---
 const socket = io('https://buss-project.onrender.com');
 const elStatus = document.getElementById('connection-status');
 const elMyId = document.getElementById('my-id');
@@ -79,7 +102,7 @@ socket.on('disconnect', () => {
     elStatus.style.color = "#FF5722";
 });
 
-// --- 5. SNAP-TO-ROAD (OSRM API) ---
+// --- 6. SNAP-TO-ROAD (OSRM API) ---
 async function fetchSnappedLocation(lat, lng) {
     try {
         const response = await fetch(`https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=1`);
@@ -92,7 +115,7 @@ async function fetchSnappedLocation(lat, lng) {
     return { lat, lng };
 }
 
-// --- 6. SMOOTHING & TELEMETRY ---
+// --- 7. SMOOTHING & TELEMETRY ---
 const localSmoothingBuffer = [];
 const DISTANCE_THRESHOLD = 2; 
 const ACCURACY_THRESHOLD = 100; 
@@ -166,7 +189,8 @@ function updateLocalUI(lat, lng, speed, accuracy) {
         myMarker = L.marker([lat, lng], { icon: myIcon }).addTo(map);
         if (followTarget === BUS_UNIT_ID) map.setView([lat, lng], 17);
     } else {
-        myMarker.setLatLng([lat, lng]);
+        // USE LERP ANIMATION
+        animateMarkerTo(myMarker, lat, lng, 1000);
         if (followTarget === BUS_UNIT_ID) map.panTo([lat, lng]);
     }
 }
@@ -179,7 +203,7 @@ function flushOfflineBuffer() {
     }
 }
 
-// --- 7. CLOUD LISTENERS ---
+// --- 8. CLOUD LISTENERS ---
 socket.on('receive-location', (data) => {
     const { id, busName, lat, lng, speed, accuracy } = data;
     const unitTag = busName || id;
@@ -201,17 +225,13 @@ socket.on('receive-location', (data) => {
     if (!fleetMarkers[unitTag]) {
         fleetMarkers[unitTag] = L.marker([lat, lng], { icon: peerIcon }).addTo(map);
     } else {
-        fleetMarkers[unitTag].setLatLng([lat, lng]);
+        // USE LERP ANIMATION
+        animateMarkerTo(fleetMarkers[unitTag], lat, lng, 1000);
     }
 
-    // TARGETED PANNING logic
     if (unitTag === followTarget) {
         map.panTo([lat, lng]);
     }
-});
-
-socket.on('unit-disconnected', (id) => {
-    // Graceful disconnect cleanup removed or made silent as requested in previous turn
 });
 
 function createFleetCard(id) {
@@ -233,22 +253,22 @@ function createFleetCard(id) {
     };
 }
 
-// --- 8. UI HANDLERS ---
+// --- 9. UI HANDLERS ---
 const followInput = document.getElementById('follow-input');
-followInput.addEventListener('input', (e) => {
-    followTarget = e.target.value.trim();
-    if (followTarget) {
-        console.log(`[Follow] Target set to: ${followTarget}`);
-        // Immediately try to pan if the target exists
-        if (followTarget === BUS_UNIT_ID && lastEmittedPosition) {
-             map.panTo([lastEmittedPosition.lat, lastEmittedPosition.lng]);
-        } else if (fleetMarkers[followTarget]) {
-             map.panTo(fleetMarkers[followTarget].getLatLng());
+if (followInput) {
+    followInput.addEventListener('input', (e) => {
+        followTarget = e.target.value.trim();
+        if (followTarget) {
+            if (followTarget === BUS_UNIT_ID && lastEmittedPosition) {
+                 map.panTo([lastEmittedPosition.lat, lastEmittedPosition.lng]);
+            } else if (fleetMarkers[followTarget]) {
+                 map.panTo(fleetMarkers[followTarget].getLatLng());
+            }
         }
-    }
-});
+    });
+}
 
-// --- 9. GEOLOCATION WATCHER ---
+// --- 10. GEOLOCATION WATCHER ---
 if ("geolocation" in navigator) {
     navigator.geolocation.watchPosition(
         (pos) => { handleLocationUpdate(pos.coords.latitude, pos.coords.longitude, pos.coords.speed, pos.coords.accuracy); },
@@ -269,3 +289,10 @@ document.getElementById('sidebar-header').addEventListener('click', () => {
     content.style.display = isHidden ? 'flex' : 'none';
     document.getElementById('toggle-btn').querySelector('i').className = isHidden ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up';
 });
+
+// PWA Service Worker Registration
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then(() => {
+        console.log('[BUSS] Service Worker Registered');
+    });
+}
